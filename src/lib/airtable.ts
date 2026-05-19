@@ -16,8 +16,18 @@ const eventRecords = await base('Events & Competitions').select({
         'Internal/External',]
 }).all()
 
+// Fetch from coaching interactions view
+const coachingRecords = await base('Interactions- Student & Mentors').select({
+    view: 'All Records',
+    fields: ['Interaction', 'Entrepreneur', 'Company', 'Date', 'Time', 'Duration', 'Type of Interaction',
+        'Topic', 'ACEI Member', 'Notes']
+    }).all()
 
+// Fetch from ambassador tracking view
+const ambassadorRecords = await base('Ambassador Tracking').select({
+    view: 'Grid view',
+    fields: ['Activity Tracking', 'Ambassador Name', 'Actiity', 'Date', 'Duration', 'Location',
+        '# of Students Interacted With', 'Notes']
+}).all()
 
-
-
-export { base, studentRecords };
+export { base, studentRecords, eventRecords, coachingRecords, ambassadorRecords };
