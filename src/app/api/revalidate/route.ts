@@ -1,17 +1,37 @@
-import { revalidateTag } from 'next/cache';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse, type NextRequest } from "next/server";
+import { revalidateTag } from "next/cache";
+import { getSession } from "@/lib/dal";
+import { ALL_TAGS } from "@/lib/airtable/constants";
 
-// On-demand cache busting API route to trigger revalidation of all cached data when a POST request is made to this endpoint with the correct secret.
-// This allows us to ensure that our dashboard always shows the most up-to-date data after any changes are made to the underlying Airtable records.
+/**
+ * Busts every Airtable cache tag (stale-while-revalidate).
+ *
+ * - GET  with `?secret=` — used by the daily Vercel Cron job.
+ * - POST — used by the in-app "Refresh" button; requires a signed-in admin.
+ */
 
-// Post function to trigger revalidation of all cached data by calling revalidateTag with the 'data' tag and return a success message as a JSON response
-export async function POST(req: NextRequest) {
-    const { tag, secret } = await req.json();
+function revalidateAll() {
+  for (const tag of ALL_TAGS) revalidateTag(tag, "max");
+}
 
-    if (secret !== process.env.REVALIDATE_SECRET) {
-        return NextResponse.json({ success: false, message: 'Invalid secret' }, { status: 401 });
-    }
+export async function GET(request: NextRequest) {
+  // Vercel Cron sends `Authorization: Bearer $CRON_SECRET`; a manual call can
+  // pass `?secret=`.
+  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const secret = request.nextUrl.searchParams.get("secret") ?? bearer;
+  const expected = process.env.CRON_SECRET ?? process.env.REVALIDATE_SECRET;
+  if (!expected || secret !== expected) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  revalidateAll();
+  return NextResponse.json({ ok: true, revalidated: ALL_TAGS.length, at: Date.now() });
+}
 
-    revalidateTag('data', { expire: 0});
-    return NextResponse.json({ success: true });
+export async function POST() {
+  const session = await getSession();
+  if (!session) {
+    return NextResponse.json({ ok: false }, { status: 401 });
+  }
+  revalidateAll();
+  return NextResponse.json({ ok: true, revalidated: ALL_TAGS.length, at: Date.now() });
 }
