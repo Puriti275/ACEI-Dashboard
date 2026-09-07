@@ -62,3 +62,13 @@ export const getStudents = cache(
   (): Promise<StudentRecord[]> =>
     airtableSelect<StudentFields>(TABLES.students, { fields: FIELDS }, [TAGS.students]),
 );
+
+/** id -> display name, for resolving linked-record ids in aggregates. */
+export async function getStudentNameMap(): Promise<Map<string, string>> {
+  const records = await getStudents();
+  const map = new Map<string, string>();
+  for (const record of records) {
+    if (record.fields.Name) map.set(record.id, record.fields.Name);
+  }
+  return map;
+}
