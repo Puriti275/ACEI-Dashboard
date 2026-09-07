@@ -1,16 +1,23 @@
 import type { Metadata } from "next";
 import { getEventMetrics } from "@/lib/metrics/events";
 import { toTable } from "@/lib/metrics/shared";
+import { parseRangeKey } from "@/lib/metrics/window";
 import { PageHeader } from "@/components/page-header";
 import { RefreshButton } from "@/components/refresh-button";
+import { RangeBoundary } from "@/components/range-boundary";
 import { ChartCard, ChartEmpty } from "@/components/charts/chart-card";
 import { ChartGrid, GridSpan, StatRow } from "@/components/charts/chart-grid";
 import { CategoryBar, DonutChart, StackedBar } from "@/components/charts/primitives";
 
 export const metadata: Metadata = { title: "Events" };
 
-export default async function EventsPage() {
-  const m = await getEventMetrics();
+export default async function EventsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ window?: string }>;
+}) {
+  const rangeKey = parseRangeKey((await searchParams).window);
+  const m = await getEventMetrics(rangeKey);
 
   return (
     <div>
@@ -20,13 +27,14 @@ export default async function EventsPage() {
         actions={<RefreshButton />}
       />
 
+      <RangeBoundary>
       <StatRow tiles={m.tiles} />
 
       <ChartGrid>
         <GridSpan full>
           <ChartCard
             title="Participation levels"
-            subtitle="Across all recorded event participation"
+            subtitle="All recorded event participation (all time)"
             table={toTable(m.participationLevels, "People")}
           >
             {m.participationLevels.length ? (
@@ -39,13 +47,17 @@ export default async function EventsPage() {
 
         <ChartCard
           title="Events by category"
-          subtitle="Derived from the event name"
+          subtitle={m.rangeLabel}
           table={toTable(m.byCategory, "Events")}
         >
           {m.byCategory.length ? <CategoryBar data={m.byCategory} /> : <ChartEmpty />}
         </ChartCard>
 
-        <ChartCard title="Registration status" table={toTable(m.registrationStatus, "Registrations")}>
+        <ChartCard
+          title="Registration status"
+          subtitle={m.rangeLabel}
+          table={toTable(m.registrationStatus, "Registrations")}
+        >
           {m.registrationStatus.length ? (
             <DonutChart data={m.registrationStatus} />
           ) : (
@@ -55,12 +67,12 @@ export default async function EventsPage() {
 
         <GridSpan full>
           <ChartCard
-            title="Registrations per month"
-            subtitle="Last 12 months"
-            table={toTable(m.registrationsPerMonth, "Registrations")}
+            title="Registrations over time"
+            subtitle={`${m.perPeriodLabel} · ${m.rangeLabel}`}
+            table={toTable(m.registrationsPerPeriod, "Registrations")}
           >
-            {m.registrationsPerMonth.some((d) => d.value > 0) ? (
-              <CategoryBar data={m.registrationsPerMonth} orientation="vertical" />
+            {m.registrationsPerPeriod.some((d) => d.value > 0) ? (
+              <CategoryBar data={m.registrationsPerPeriod} orientation="vertical" />
             ) : (
               <ChartEmpty message="No registrations dated in this window." />
             )}
@@ -69,6 +81,7 @@ export default async function EventsPage() {
 
         <ChartCard
           title="Attendee affiliation"
+          subtitle={m.rangeLabel}
           table={toTable(m.attendeeAffiliation, "Registrations")}
         >
           {m.attendeeAffiliation.length ? (
@@ -80,6 +93,7 @@ export default async function EventsPage() {
 
         <ChartCard
           title="Internal vs. external by semester"
+          subtitle="All time"
           table={{
             columns: ["Semester", "Internal", "External"],
             rows: m.internalExternalBySemester.map((row) => [
@@ -102,6 +116,7 @@ export default async function EventsPage() {
           )}
         </ChartCard>
       </ChartGrid>
+      </RangeBoundary>
     </div>
   );
 }

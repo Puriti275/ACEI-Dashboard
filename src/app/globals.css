@@ -147,6 +147,15 @@
   --radius-3xl: calc(var(--radius) * 2.2);
 }
 
+@keyframes loading-bar {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(420%);
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

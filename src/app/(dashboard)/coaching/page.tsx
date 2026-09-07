@@ -1,16 +1,23 @@
 import type { Metadata } from "next";
 import { getCoachingMetrics } from "@/lib/metrics/coaching";
 import { toTable } from "@/lib/metrics/shared";
+import { parseRangeKey } from "@/lib/metrics/window";
 import { PageHeader } from "@/components/page-header";
 import { RefreshButton } from "@/components/refresh-button";
+import { RangeBoundary } from "@/components/range-boundary";
 import { ChartCard, ChartEmpty } from "@/components/charts/chart-card";
 import { ChartGrid, GridSpan, StatRow } from "@/components/charts/chart-grid";
 import { CategoryBar, TrendChart } from "@/components/charts/primitives";
 
 export const metadata: Metadata = { title: "Coaching" };
 
-export default async function CoachingPage() {
-  const m = await getCoachingMetrics();
+export default async function CoachingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ window?: string }>;
+}) {
+  const rangeKey = parseRangeKey((await searchParams).window);
+  const m = await getCoachingMetrics(rangeKey);
 
   return (
     <div>
@@ -20,17 +27,18 @@ export default async function CoachingPage() {
         actions={<RefreshButton />}
       />
 
+      <RangeBoundary>
       <StatRow tiles={m.tiles} />
 
       <ChartGrid>
         <GridSpan full>
           <ChartCard
-            title="Interactions per week"
-            subtitle="Last 16 weeks"
-            table={toTable(m.perWeek, "Interactions")}
+            title="Interactions over time"
+            subtitle={`${m.perPeriodLabel} · ${m.rangeLabel}`}
+            table={toTable(m.perPeriod, "Interactions")}
           >
-            {m.perWeek.some((d) => d.value > 0) ? (
-              <TrendChart data={m.perWeek} type="area" />
+            {m.perPeriod.some((d) => d.value > 0) ? (
+              <TrendChart data={m.perPeriod} type="area" />
             ) : (
               <ChartEmpty message="No interactions dated in this window." />
             )}
@@ -39,20 +47,20 @@ export default async function CoachingPage() {
 
         <ChartCard
           title="By type of interaction"
-          subtitle={m.termLabel}
+          subtitle={m.rangeLabel}
           table={toTable(m.byType, "Interactions")}
         >
           {m.byType.length ? <CategoryBar data={m.byType} /> : <ChartEmpty />}
         </ChartCard>
 
-        <ChartCard title="By topic" subtitle={m.termLabel} table={toTable(m.byTopic, "Interactions")}>
+        <ChartCard title="By topic" subtitle={m.rangeLabel} table={toTable(m.byTopic, "Interactions")}>
           {m.byTopic.length ? <CategoryBar data={m.byTopic} /> : <ChartEmpty />}
         </ChartCard>
 
         <GridSpan full>
           <ChartCard
             title="Mentor load"
-            subtitle={`Interactions per ACEI member · ${m.termLabel}`}
+            subtitle={`Interactions per ACEI member · ${m.rangeLabel}`}
             table={toTable(m.mentorLoad, "Interactions")}
           >
             {m.mentorLoad.length ? <CategoryBar data={m.mentorLoad} /> : <ChartEmpty />}
@@ -73,12 +81,13 @@ export default async function CoachingPage() {
 
         <ChartCard
           title="By entrepreneur's college"
-          subtitle={m.termLabel}
+          subtitle={m.rangeLabel}
           table={toTable(m.byCollege, "Interactions")}
         >
           {m.byCollege.length ? <CategoryBar data={m.byCollege} /> : <ChartEmpty />}
         </ChartCard>
       </ChartGrid>
+      </RangeBoundary>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { cache } from "react";
 import { categorizeEvent, getEvents } from "@/lib/airtable/events";
 import { getEventParticipation } from "@/lib/airtable/event-participation";
 import { getEventRegistrations } from "@/lib/airtable/event-registrations";
-import { currentTermLabel, currentTermStart, daysFromNow, toTime } from "@/lib/dates";
+import { daysFromNow, toTime } from "@/lib/dates";
 import {
   type Datum,
   mapToData,
@@ -14,6 +14,7 @@ import {
   timeBuckets,
   topN,
 } from "./shared";
+import { type RangeKey, inRange, resolveRange } from "./window";
 
 const PARTICIPATION_ORDER = [
   "Registered",
@@ -42,16 +43,19 @@ const SEMESTER_ORDER = [
 ];
 
 export type EventMetrics = {
+  rangeLabel: string;
+  perPeriodLabel: string;
   tiles: { label: string; value: string; hint?: string }[];
   participationLevels: Datum[];
   byCategory: Datum[];
-  registrationsPerMonth: Datum[];
+  registrationsPerPeriod: Datum[];
   registrationStatus: Datum[];
   attendeeAffiliation: Datum[];
   internalExternalBySemester: Record<string, string | number>[];
 };
 
-export const getEventMetrics = cache(async (): Promise<EventMetrics> => {
+export const getEventMetrics = cache(async (rangeKey: RangeKey): Promise<EventMetrics> => {
+  const range = resolveRange(rangeKey);
   const [events, participation, registrations] = await Promise.all([
     getEvents(),
     getEventParticipation(),
@@ -59,20 +63,18 @@ export const getEventMetrics = cache(async (): Promise<EventMetrics> => {
   ]);
 
   const now = Date.now();
-  const termStart = currentTermStart();
-  const eventsThisTerm = events.filter((r) => {
-    const t = toTime(r.fields.Date);
-    return t !== null && t >= termStart;
-  }).length;
+  const scopedEvents = events.filter((r) => inRange(toTime(r.fields.Date), range));
+  const scopedRegs = registrations.filter((r) =>
+    inRange(toTime(r.fields["Registration Date"]), range),
+  );
+
   const upcoming30 = events.filter((r) => {
     const t = toTime(r.fields.Date);
     return t !== null && t >= now && t <= daysFromNow(30);
   }).length;
 
-  const attended = registrations.filter(
-    (r) => r.fields["Registration Status"] === "Attended",
-  ).length;
-  const notCancelled = registrations.filter(
+  const attended = scopedRegs.filter((r) => r.fields["Registration Status"] === "Attended").length;
+  const notCancelled = scopedRegs.filter(
     (r) => r.fields["Registration Status"] !== "Cancelled",
   ).length;
   const awarded = participation.reduce((sum, r) => sum + parseAmount(r.fields["$ Awarded"]), 0);
@@ -90,47 +92,45 @@ export const getEventMetrics = cache(async (): Promise<EventMetrics> => {
   }).filter((row) => row.Internal + row.External > 0);
 
   return {
+    rangeLabel: range.label,
+    perPeriodLabel: range.bucket === "week" ? "Weekly" : "Monthly",
     tiles: [
-      { label: `Events · ${currentTermLabel()}`, value: eventsThisTerm.toLocaleString() },
+      { label: `Events · ${range.label}`, value: scopedEvents.length.toLocaleString() },
       { label: "Upcoming · 30d", value: upcoming30.toLocaleString() },
       {
         label: "Registrations",
-        value: registrations.length.toLocaleString(),
-        hint: "all time",
+        value: scopedRegs.length.toLocaleString(),
+        hint: range.label,
       },
       {
         label: "Attendance rate",
         value: notCancelled ? `${Math.round((attended / notCancelled) * 100)}%` : "—",
-        hint: `${attended.toLocaleString()} marked attended`,
+        hint: `${attended.toLocaleString()} attended`,
       },
-      { label: "Competition winners", value: winners.toLocaleString() },
+      { label: "Competition winners", value: winners.toLocaleString(), hint: "all time" },
       {
         label: "$ awarded",
-        value:
-          awarded >= 1000 ? `$${Math.round(awarded / 1000)}K` : `$${Math.round(awarded)}`,
-        hint: "recorded in Event Participation",
+        value: awarded >= 1000 ? `$${Math.round(awarded / 1000)}K` : `$${Math.round(awarded)}`,
+        hint: "all time",
       },
     ],
     participationLevels: orderedTally(participation, PARTICIPATION_ORDER, (r) =>
       r.fields["Level of Participation"],
     ).filter((d) => d.value > 0),
     byCategory: sortDesc(
-      mapToData(tally(events, (r) => categorizeEvent(r.fields["Event Name"]))),
+      mapToData(tally(scopedEvents, (r) => categorizeEvent(r.fields["Event Name"]))),
     ),
-    registrationsPerMonth: timeBuckets(
+    registrationsPerPeriod: timeBuckets(
       registrations
         .map((r) => toTime(r.fields["Registration Date"]))
         .filter((t): t is number => t !== null),
-      "month",
-      12,
+      range.bucket,
+      range.bucketCount,
     ),
-    registrationStatus: orderedTally(registrations, STATUS_ORDER, (r) =>
+    registrationStatus: orderedTally(scopedRegs, STATUS_ORDER, (r) =>
       r.fields["Registration Status"],
     ).filter((d) => d.value > 0),
-    attendeeAffiliation: topN(
-      mapToData(tally(registrations, (r) => r.fields.Affiliation)),
-      8,
-    ),
+    attendeeAffiliation: topN(mapToData(tally(scopedRegs, (r) => r.fields.Affiliation)), 8),
     internalExternalBySemester: semesterRows,
   };
 });

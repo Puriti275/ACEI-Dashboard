@@ -13,6 +13,8 @@ export function tally<T>(
     const raw = extract(record);
     const values = Array.isArray(raw) ? raw : raw == null ? [] : [raw];
     for (const value of values) {
+      // Airtable rollups/lookups can yield null entries inside an array.
+      if (typeof value !== "string") continue;
       const key = value.trim();
       if (!key) continue;
       counts.set(key, (counts.get(key) ?? 0) + 1);
